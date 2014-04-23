@@ -17,93 +17,83 @@ def est_loc(snp_matrix, k=2, max_iter=10):
     # n people, l snps
     n, l = snp_matrix.shape
 
-    # random initialization of the location matrix
-    X = stats.norm.rvs(size=[n, k])
+    X, Y, Z, chunk_size = _get_variables(snp_matrix, k)
 
-    chunk_size = k**2 + k + 1
-    Z, Y = _get_variables(snp_matrix, X, chunk_size, k)
-
-    # do this to get the part of the flattened vector we are interested in
-    def _chunk(i, j):
-        jprime = j * chunk_size
-        end = (j + 1) * chunk_size
-        return jprime, end
-
-    def _fij(i, j, y):
-        jprime, end = _chunk(i, j)
-        return 1.0 / (1.0 + numpy.exp(Z[i].T.dot(y[jprime:end])))
+    def _fij(i, yj):
+        quad = math.exp(Z[i].T.dot(yj))
+        return quad / (1.0 + quad)
 
     # likelihood function
-    def _f(y):
+    def _f(yj, j):
         ll = 0.0
         for i in range(n):
-            for j in range(l):
-                jprime, end = _chunk(i, j)
-                gij = snp_matrix[i, j]
-                yj = y[jprime:end]
-                ll += gij * math.log(1 + math.exp(-Z[i].T.dot(yj))) + (2 - gij) * math.log(1 + math.exp(Z[i].T.dot(yj)))
+            gij = snp_matrix[i, j]
+            print Z[i].T.dot(yj), Z[i], yj
+            ll += gij * math.log(1 + math.exp(-Z[i].T.dot(yj))) + (2 - gij) * math.log(1 + math.exp(Z[i].T.dot(yj)))
+
         return -ll
 
     # gradient of the likelihood
-    def _grad(y, *args):
-        grad = numpy.zeros(n)
+    def _grad(yj, j):
+        grad = numpy.zeros(chunk_size)
         for i in range(n):
-            for j in range(l):
-                fij = _fij(i, j, y)
-                gij = snp_matrix[i, j]
-                grad[j] += (gij * (1 - fij) - (2 - gij) * fij) * Z[i]
+            fij = _fij(i, yj)
+            gij = snp_matrix[i, j]
+            grad += (gij * (1 - fij) - (2 - gij) * fij) * Z[i]
+
         return grad
 
     # hessian of the likelihood
-    def _hess(y, *args):
-        hess = numpy.zeros((n, l))
+    def _hess(yj, j):
+        hess = numpy.zeros((chunk_size, chunk_size))
         for i in range(n):
-            for j in range(l):
-                fij = _fij(i, j, y)
-                hess += 2 * fij * (1 - fij) * numpy.outer(Z[i], Z[i])
+            fij = _fij(i, yj)
+            hess -= 2 * fij * (1 - fij) * numpy.outer(Z[i], Z[i])
+
         return hess
 
     out = None
     for iter in range(max_iter):
         # maximize likelihood wrt Q, A, B for fixed X
-        # ...
-        out = opt.fmin_ncg(_f, Y, fprime=_grad, fhess=_hess)
+        # we can do each 'j' individually due to linearity in 'i'
+        for j in range(l):
+            out = opt.minimize(_f, Y[j], method="Newton-CG", jac=_grad, hess=_hess, args=(j,))
+            Y[j] = out.x
 
         # maximize likelihood wrt X for fixed Q, A, B
         # ...
-        print out
 
     return out
 
 
-def _get_variables(snp_matrix, X, chunk_size, k=2):
+def _get_variables(snp_matrix, k=2):
     """ This function takes the snp matrix along with an initial estimate X
     and computes the extended variable formulations Z and Y.
     """
     # n people, l snps
     n, l = snp_matrix.shape
 
+    # random initialization of the location matrix
+    X = stats.norm.rvs(size=[n, k], loc=[10]*k)
+
+    chunk_size = k**2 + k + 1
+
     # Get the MLEs for each Gaussian
     mu = numpy.ones((l, 2, k))
     sigma = numpy.ones((l, 2, k, k))
+    p = numpy.ones((l, 2))
     for j in range(l):
-        snp = MAJOR
-        xs = [X[i] for i in range(n) if snp_matrix[i, j] == snp or snp_matrix[i, j] == HETERO]
+        xs = [X[i] for i in range(n) if snp_matrix[i, j] == MAJOR]
         flen = float(len(xs))
+        p[j, 0] = flen / n
+        p[j, 1] = 1 - flen / n
         mu[j, 0] = sum(xs) / flen
         sigma[j, 0] = sum([numpy.outer((x - mu[j, 0]), (x - mu[j, 0])) for x in xs]) / flen
 
-        snp = MINOR
-        xs = [X[i] for i in range(n) if snp_matrix[i, j] == snp or snp_matrix[i, j] == HETERO]
+        xs = [X[i] for i in range(n) if snp_matrix[i, j] == MINOR]
         flen = float(len(xs))
         mu[j, 1] = sum(xs) / flen
         sigma[j, 1] = sum([numpy.outer((x - mu[j, 1]), (x - mu[j, 1])) for x in xs]) / flen
-
-    # These should be provided [I'd imagine] or directly estimated;
-    # otherwise, we would only have local estimate for MLEs
-    # but for testing this is fine...
-    alpha = numpy.ones(k)
-    p = numpy.random.dirichlet(alpha, size=l)
 
     # the extended X = [vec(XX^T), X, 1] formulation
     Z = numpy.ones((n, chunk_size))
@@ -121,4 +111,4 @@ def _get_variables(snp_matrix, X, chunk_size, k=2):
         bj += numpy.log(math.sqrt(linalg.det(inv_sigma_j1) / linalg.det(inv_sigma_j0)) + (p[j, 0] / p[j, 1]))
         Y[j] = numpy.concatenate((qj.flatten('f'), aj, [bj]))
 
-    return Z, Y
+    return X, Y, Z, chunk_size
