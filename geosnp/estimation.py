@@ -28,7 +28,7 @@ def est_loc(snp_matrix, k=2, max_iter=10):
         ll = 0.0
         for i in range(n):
             gij = snp_matrix[i, j]
-            print Z[i].T.dot(yj), Z[i], yj
+            #print Z[i].T.dot(yj), Z[i], yj
             ll += gij * math.log(1 + math.exp(-Z[i].T.dot(yj))) + (2 - gij) * math.log(1 + math.exp(Z[i].T.dot(yj)))
 
         return -ll
