@@ -29,7 +29,7 @@ def est_loc(snp_matrix, k=2, max_iter=10):
         ll = 0.0
         for i in range(n):
             gij = snp_matrix[i, j]
-            qnf = math.exp(Z[i].T.dot(yj))
+            qnf = Z[i].T.dot(yj)
             ll -= gij * math.log(1 + math.exp(-qnf)) + (2 - gij) * math.log(1 + math.exp(qnf))
 
         # return NLL in order to minimize
@@ -42,7 +42,7 @@ def est_loc(snp_matrix, k=2, max_iter=10):
         zi = numpy.concatenate((numpy.outer(xi, xi).flat, xi, [1.0]))
         for j in range(l):
             gij = snp_matrix[i, j]
-            qnf = math.exp(zi.T.dot(Y[j]))
+            qnf = zi.T.dot(Y[j])
             ll -= gij * math.log(1 + math.exp(-qnf)) + (2 - gij) * math.log(1 + math.exp(qnf))
 
             # return NLL in order to minimize
@@ -67,7 +67,7 @@ def est_loc(snp_matrix, k=2, max_iter=10):
         for j in range(l):
             fij = _fij(i, Y[j])
             gij = snp_matrix[i, j]
-            qj, aj, = Y[j][:k**2].reshape((k, k)), Y[j][k**2:k**2 + 1]
+            qj, aj = Y[j][:k**2].reshape((k, k)), Y[j][k**2:k**2 + 1]
             grad += ((gij * (1.0 - fij)) + ((gij - 2.0) * fij)) * (2.0 * qj.dot(xi) + aj)
 
         # flip for NLL
@@ -91,7 +91,7 @@ def est_loc(snp_matrix, k=2, max_iter=10):
         for j in range(l):
             fij = _fij(i, Y[j])
             gij = snp_matrix[i, j]
-            qj, aj, bj = Y[j]
+            qj, aj = Y[j][:k**2].reshape((k, k)), Y[j][k**2:k**2 + 1]
             term = 2 * qj.dot(xi) + aj
             hess -= 2.0 * fij * (1.0 - fij) * numpy.outer(term, term) + (gij - fij)*(2.0 * qj)
 
@@ -102,22 +102,21 @@ def est_loc(snp_matrix, k=2, max_iter=10):
         # maximize likelihood wrt Q, A, B for fixed X
         # we can do each 'j' individually due to linearity in 'i'
         for j in range(l):
-            #out = opt.minimize(_nlly, Y[j], method="Newton-CG", jac=_grady, hess=_hessy, args=(j,), tol=0.001)
-            out = opt.minimize(_nlly, Y[j], method="Nelder-Mead", args=(j,), tol=0.001)
+            out = opt.minimize(_nlly, Y[j], method="trust-ncg", jac=_grady, hess=_hessy, args=(j,),
+                               options={'gtol': 1e-3, 'disp': True})
+            #out = opt.minimize(_nlly, Y[j], method="Nelder-Mead", args=(j,), tol=0.001)
             Y[j] = out.x
 
-        print 'done y'
         # maximize likelihood wrt X for fixed Q, A, B
         # this is not necessarily concave, so we may need to resort to
         # other methods like grid-search if we can find good regions
         # first test with CG.
         for i in range(n):
             xi = Z[i][k**2:k**2 + k]
-            out = opt.minimize(_nllx, xi, method="Newton-CG", jac=_gradx, hess=_hessx, args=(i,), tol=0.001)
+            out = opt.minimize(_nllx, xi, method="trust-ncg", jac=_gradx, hess=_hessx, args=(i,),
+                               options={'gtol': 1e-3, 'disp': True})
             X[i] = out.x
             Z[i] = numpy.concatenate((numpy.outer(out.x, out.x).flat, out.x, [1.0]))
-
-        print 'done x'
 
     return X
 
