@@ -29,8 +29,9 @@ def est_loc(snp_matrix, k=2, max_iter=10):
         for i in range(n):
             gij = snp_matrix[i, j]
             #print Z[i].T.dot(yj), Z[i], yj
-            ll += gij * math.log(1 + math.exp(-Z[i].T.dot(yj))) + (2 - gij) * math.log(1 + math.exp(Z[i].T.dot(yj)))
+            ll -= gij * math.log(1 + math.exp(-Z[i].T.dot(yj))) + (2 - gij) * math.log(1 + math.exp(Z[i].T.dot(yj)))
 
+        # return NLL to minimize
         return -ll
 
     # gradient of the likelihood
@@ -41,7 +42,8 @@ def est_loc(snp_matrix, k=2, max_iter=10):
             gij = snp_matrix[i, j]
             grad += (gij * (1 - fij) - (2 - gij) * fij) * Z[i]
 
-        return grad
+        # flip bc NLL
+        return -grad
 
     # hessian of the likelihood
     def _hess(yj, j):
@@ -50,18 +52,21 @@ def est_loc(snp_matrix, k=2, max_iter=10):
             fij = _fij(i, yj)
             hess -= 2 * fij * (1 - fij) * numpy.outer(Z[i], Z[i])
 
-        return hess
+        # flip bc NLL
+        return -hess
 
     out = None
     for iter in range(max_iter):
         # maximize likelihood wrt Q, A, B for fixed X
         # we can do each 'j' individually due to linearity in 'i'
         for j in range(l):
-            out = opt.minimize(_f, Y[j], method="Newton-CG", jac=_grad, hess=_hess, args=(j,))
+            out = opt.minimize(_f, Y[j], method="Newton-CG", jac=_grad, hess=_hess, args=(j,), tol=0.001)
             Y[j] = out.x
+            #print 'done'
 
         # maximize likelihood wrt X for fixed Q, A, B
-        # ...
+        for i in range(n):
+            continue
 
     return out
 
@@ -74,7 +79,7 @@ def _get_variables(snp_matrix, k=2):
     n, l = snp_matrix.shape
 
     # random initialization of the location matrix
-    X = stats.norm.rvs(size=[n, k], loc=[10]*k)
+    X = stats.norm.rvs(size=[n, k])
 
     chunk_size = k**2 + k + 1
 
@@ -105,10 +110,12 @@ def _get_variables(snp_matrix, k=2):
     for j in range(l):
         inv_sigma_j0 = linalg.inv(sigma[j, 0])
         inv_sigma_j1 = linalg.inv(sigma[j, 1])
-        qj = inv_sigma_j0 - inv_sigma_j1
-        aj = (inv_sigma_j1.dot(mu[j, 1])) - (inv_sigma_j0.dot(mu[j, 0]))
+        qj = -0.5 * (inv_sigma_j0 - inv_sigma_j1)
+        aj = -0.5 * ((inv_sigma_j1.dot(mu[j, 1])) - (inv_sigma_j0.dot(mu[j, 0])))
         bj = (mu[j, 0].T.dot(inv_sigma_j0).dot(mu[j, 0])) - (mu[j, 1].T.dot(inv_sigma_j1).dot(mu[j, 1]))
-        bj += numpy.log(math.sqrt(linalg.det(inv_sigma_j1) / linalg.det(inv_sigma_j0)) + (p[j, 0] / p[j, 1]))
+        bj -= math.log(math.sqrt(linalg.det(inv_sigma_j1) / linalg.det(inv_sigma_j0)))
+        bj -= math.log(p[j, 0] / p[j, 1])
+        bj *= -0.5
         Y[j] = numpy.concatenate((qj.flatten('f'), aj, [bj]))
 
     return X, Y, Z, chunk_size
