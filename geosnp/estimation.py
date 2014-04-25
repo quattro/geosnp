@@ -24,7 +24,8 @@ def est_loc(snp_matrix, k=2, max_iter=10):
         return qnf / (1.0 + qnf)
 
     # negative log-likelihood function (NLL)
-    def _nll(yj, j):
+    # use this for Y
+    def _nlly(yj, j):
         ll = 0.0
         for i in range(n):
             gij = snp_matrix[i, j]
@@ -34,8 +35,22 @@ def est_loc(snp_matrix, k=2, max_iter=10):
         # return NLL in order to minimize
         return -ll
 
+    # negative log-likelihood function (NLL)
+    # use this for x
+    def _nllx(xi, i):
+        ll = 0.0
+        zi = numpy.concatenate((numpy.outer(xi, xi).flat, xi, [1.0]))
+        for j in range(l):
+            gij = snp_matrix[i, j]
+            qnf = math.exp(zi.T.dot(Y[j]))
+            ll -= gij * math.log(1 + math.exp(-qnf)) + (2 - gij) * math.log(1 + math.exp(qnf))
+
+            # return NLL in order to minimize
+        return -ll
+
     # gradient of the NLL
-    def _grad(yj, j):
+    # use this for Y
+    def _grady(yj, j):
         grad = numpy.zeros(chunk_size)
         for i in range(n):
             fij = _fij(i, yj)
@@ -45,8 +60,22 @@ def est_loc(snp_matrix, k=2, max_iter=10):
         # flip for NLL
         return -grad
 
+    # gradient of the NLL
+    # use this for X
+    def _gradx(xi, i):
+        grad = numpy.zeros(chunk_size)
+        for j in range(l):
+            fij = _fij(i, Y[j])
+            gij = snp_matrix[i, j]
+            qj, aj, = Y[j][:k**2].reshape((k, k)), Y[j][k**2:k**2 + 1]
+            grad += ((gij * (1.0 - fij)) + ((gij - 2.0) * fij)) * (2.0 * qj.dot(xi) + aj)
+
+        # flip for NLL
+        return -grad
+
     # hessian of the NLL
-    def _hess(yj, j):
+    # use this for Y
+    def _hessy(yj, j):
         hess = numpy.zeros((chunk_size, chunk_size))
         for i in range(n):
             fij = _fij(i, yj)
@@ -55,21 +84,42 @@ def est_loc(snp_matrix, k=2, max_iter=10):
         # flip for NLL
         return -hess
 
-    out = None
-    for iter in range(max_iter):
+    # hessian of the NLL
+    # use this for X
+    def _hessx(xi, i):
+        hess = numpy.zeros((chunk_size, chunk_size))
+        for j in range(l):
+            fij = _fij(i, Y[j])
+            gij = snp_matrix[i, j]
+            qj, aj, bj = Y[j]
+            term = 2 * qj.dot(xi) + aj
+            hess -= 2.0 * fij * (1.0 - fij) * numpy.outer(term, term) + (gij - fij)*(2.0 * qj)
+
+        # flip for NLL
+        return -hess
+
+    for iter_num in range(max_iter):
         # maximize likelihood wrt Q, A, B for fixed X
         # we can do each 'j' individually due to linearity in 'i'
         for j in range(l):
-            out = opt.minimize(_nll, Y[j], method="Newton-CG", jac=_grad, hess=_hess, args=(j,), tol=0.001)
-            #out = opt.minimize(_nll, Y[j], method="Nelder-Mead", args=(j,), tol=0.001)
+            #out = opt.minimize(_nlly, Y[j], method="Newton-CG", jac=_grady, hess=_hessy, args=(j,), tol=0.001)
+            out = opt.minimize(_nlly, Y[j], method="Nelder-Mead", args=(j,), tol=0.001)
             Y[j] = out.x
 
-
+        print 'done y'
         # maximize likelihood wrt X for fixed Q, A, B
+        # this is not necessarily concave, so we may need to resort to
+        # other methods like grid-search if we can find good regions
+        # first test with CG.
         for i in range(n):
-            continue
+            xi = Z[i][k**2:k**2 + k]
+            out = opt.minimize(_nllx, xi, method="Newton-CG", jac=_gradx, hess=_hessx, args=(i,), tol=0.001)
+            X[i] = out.x
+            Z[i] = numpy.concatenate((numpy.outer(out.x, out.x).flat, out.x, [1.0]))
 
-    return out
+        print 'done x'
+
+    return X
 
 
 def _get_variables(snp_matrix, k=2):
@@ -96,31 +146,36 @@ def _get_variables(snp_matrix, k=2):
         xs = [X[i] for i in range(n) if snp_matrix[i, j] == MAJOR]
         flen = float(len(xs))
         p[j, 0] = flen / n
-        p[j, 1] = 1 - flen / n
         mu[j, 0] = sum(xs) / flen
         sigma[j, 0] = sum([numpy.outer((x - mu[j, 0]), (x - mu[j, 0])) for x in xs]) / flen
 
         xs = [X[i] for i in range(n) if snp_matrix[i, j] == MINOR]
         flen = float(len(xs))
+        p[j, 1] = 1.0 - p[j, 0]
         mu[j, 1] = sum(xs) / flen
         sigma[j, 1] = sum([numpy.outer((x - mu[j, 1]), (x - mu[j, 1])) for x in xs]) / flen
 
-    # the extended X = [vec(XX^T), X, 1] formulation
+    # the extended Z = [vec(XX^T), X, 1] formulation
     Z = numpy.ones((n, chunk_size))
     for i in range(n):
-        Z[i] = numpy.concatenate((numpy.outer(X[i], X[i]).flatten('f'), X[i], [1.0]))
+        Z[i] = numpy.concatenate((numpy.outer(X[i], X[i]).flat, X[i], [1.0]))
 
     # the extended Y = [vec(Q), A, B] formulation
-    Y = numpy.ones((l, chunk_size), dtype=numpy.float128)
+    Y = numpy.ones((l, chunk_size))
     for j in range(l):
-        inv_sigma_j0 = linalg.inv(sigma[j, 0])
-        inv_sigma_j1 = linalg.inv(sigma[j, 1])
+        sigmaj0 = sigma[j, 0]
+        sigmaj1 = sigma[j, 1]
+        inv_sigma_j0 = linalg.inv(sigmaj0)
+        inv_sigma_j1 = linalg.inv(sigmaj1)
+        muj0 = mu[j, 0]
+        muj1 = mu[j, 1]
+
         qj = -0.5 * (inv_sigma_j0 - inv_sigma_j1)
-        aj = inv_sigma_j1.dot(mu[j, 1]) - inv_sigma_j0.dot(mu[j, 0])
-        bj = mu[j, 0].T.dot(inv_sigma_j0).dot(mu[j, 0]) - mu[j, 1].T.dot(inv_sigma_j1).dot(mu[j, 1])
-        bj -= math.log(linalg.det(inv_sigma_j1) / linalg.det(inv_sigma_j0))
+        aj = inv_sigma_j1.dot(muj1) - inv_sigma_j0.dot(muj0)
+        bj = muj0.T.dot(inv_sigma_j0).dot(muj0) - muj1.T.dot(inv_sigma_j1).dot(muj1)
+        bj -= math.log(linalg.det(sigmaj1) / linalg.det(sigmaj0))
         bj -= 2.0 * math.log(p[j, 0] / p[j, 1])
         bj *= -0.5
-        Y[j] = numpy.concatenate((qj.flatten('f'), aj, [bj]))
+        Y[j] = numpy.concatenate((qj.flat, aj, [bj]))
 
     return X, Y, Z, chunk_size
