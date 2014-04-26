@@ -63,7 +63,7 @@ def est_loc(snp_matrix, k=2, max_iter=10):
     # gradient of the NLL
     # use this for X
     def _gradx(xi, i):
-        grad = numpy.zeros(chunk_size)
+        grad = numpy.zeros(k)
         for j in range(l):
             fij = _fij(i, Y[j])
             gij = snp_matrix[i, j]
@@ -87,7 +87,7 @@ def est_loc(snp_matrix, k=2, max_iter=10):
     # hessian of the NLL
     # use this for X
     def _hessx(xi, i):
-        hess = numpy.zeros((chunk_size, chunk_size))
+        hess = numpy.zeros((k, k))
         for j in range(l):
             fij = _fij(i, Y[j])
             gij = snp_matrix[i, j]
@@ -103,7 +103,7 @@ def est_loc(snp_matrix, k=2, max_iter=10):
         # we can do each 'j' individually due to linearity in 'i'
         for j in range(l):
             out = opt.minimize(_nlly, Y[j], method="trust-ncg", jac=_grady, hess=_hessy, args=(j,),
-                               options={'gtol': 1e-3, 'disp': True})
+                               options={'gtol': 1e-3})
             #out = opt.minimize(_nlly, Y[j], method="Nelder-Mead", args=(j,), tol=0.001)
             Y[j] = out.x
 
@@ -114,7 +114,7 @@ def est_loc(snp_matrix, k=2, max_iter=10):
         for i in range(n):
             xi = Z[i][k**2:k**2 + k]
             out = opt.minimize(_nllx, xi, method="trust-ncg", jac=_gradx, hess=_hessx, args=(i,),
-                               options={'gtol': 1e-3, 'disp': True})
+                               options={'gtol': 1e-3})
             X[i] = out.x
             Z[i] = numpy.concatenate((numpy.outer(out.x, out.x).flat, out.x, [1.0]))
 
