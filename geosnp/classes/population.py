@@ -107,7 +107,29 @@ class Population(object):
         return
 
     def _flip_snp(self):
-        pass
+        counts = dict([(HOMO_MAJOR, 0), (HOMO_MINOR, 0), (HETERO, 0), (MISSING, 0)])
+        for sidx in range(self.num_snps()):
+            for iidx in len(self):
+                snp = self.genotype_matrix[iidx, sidx]
+                counts[snp] += 1
+
+            # we need to flip
+            if counts[HOMO_MINOR] > counts[HOMO_MAJOR]:
+                for iidx, indv in enumerate(self.genotype_matrix):
+                    snp = self.genotype_matrix[iidx, sidx]
+                    if snp == HOMO_MAJOR or snp == HOMO_MINOR:
+                        self.genotype_matrix[iidx, sidx]
+
+                # swap the SNP info
+                minor = self.snp_info[sidx].major
+                self.snp_info[sidx].major = self.snp_info[sidx].minor
+                self.snp_info[sidx].minor = minor
+
+            # reset counts
+            counts[HOMO_MAJOR] = 0
+            counts[HOMO_MINOR] = 0
+
+        return
 
     @classmethod
     def from_bed_files(cls, filename_prefix, map_type=BIM):
@@ -166,6 +188,8 @@ class Population(object):
             else:
                 raise ValueError("Bad bed mode!")
 
+        # if the major and minor allels are reversed, flip them
+        pop._flip_snp()
         return pop
 
 
