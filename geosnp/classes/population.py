@@ -85,7 +85,7 @@ class Population(object):
         with open(filename, "r") as bim_file:
             for row in bim_file:
                 values = row.split("\t")
-                if len(values) != MAP_LEN or len(values) != BIM_LEN:
+                if len(values) != MAP_LEN and len(values) != BIM_LEN:
                     raise ValueError("Invalid map/bim file!")
 
                 snp = SNPInfo(values[0], values[1], values[2], int(values[3]))
