@@ -21,7 +21,7 @@ def est_loc(population, k=2, max_iter=10):
     flat_eye = numpy.eye(k).flat
     lagmult = 1.0
 
-    X, Y, Z, chunk_size = _get_variables(snp_matrix, k)
+    X, Y, Z, valid, chunk_size = _get_variables(snp_matrix, k)
 
     # define a bunch of functions for optimization
     def _fij(i, yj):
@@ -58,6 +58,8 @@ def est_loc(population, k=2, max_iter=10):
         ll = 0.0
         zi = numpy.concatenate((numpy.outer(xi, xi).flat, xi, [1.0]))
         for j in range(l):
+            if not valid[j]:
+                continue
             gij = _gij(i, j)
             qnf = zi.T.dot(Y[j])
             ll -= gij * math.log(1 + math.exp(-qnf)) + (2 - gij) * math.log(1 + math.exp(qnf))
@@ -82,6 +84,8 @@ def est_loc(population, k=2, max_iter=10):
     def _gradx(xi, i):
         grad = numpy.zeros(k)
         for j in range(l):
+            if not valid[j]:
+                continue
             fij = _fij(i, Y[j])
             gij = _gij(i, j)
             qj, aj = Y[j][:k**2].reshape((k, k)), Y[j][k**2:k**2 + 1]
@@ -106,6 +110,8 @@ def est_loc(population, k=2, max_iter=10):
     def _hessx(xi, i):
         hess = numpy.zeros((k, k))
         for j in range(l):
+            if not valid[j]:
+                continue
             fij = _fij(i, Y[j])
             gij = _gij(i, j)
             qj, aj = Y[j][:k**2].reshape((k, k)), Y[j][k**2:k**2 + 1]
@@ -120,9 +126,10 @@ def est_loc(population, k=2, max_iter=10):
         # we can do each 'j' individually due to linearity in 'i'
         nll = 0.0
         for j in range(l):
+            if not valid[j]:
+                continue
             out = opt.minimize(_nlly, Y[j], method="trust-ncg", jac=_grady, hess=_hessy, args=(j,),
                                options={'gtol': 1e-3})
-            #out = opt.minimize(_nlly, Y[j], method="Nelder-Mead", args=(j,), tol=0.001)
             Y[j] = out.x
             nll += out.fun
 
@@ -163,6 +170,7 @@ def _get_variables(snp_matrix, X, k=2):
     chunk_size = k**2 + k + 1
 
     # Get the MLE parameters for each Gaussian
+    valid = numpy.ones(l)
     mu = numpy.ones((l, 2, k))
     sigma = numpy.ones((l, 2, k, k))
     p = numpy.ones((l, 2))
@@ -171,6 +179,7 @@ def _get_variables(snp_matrix, X, k=2):
         flen = float(len(xs))
         p[j, 0] = flen / n
         if not xs:
+            valid[j] = 0
             continue
         mu[j, 0] = sum(xs) / flen
         sigma[j, 0] = sum([numpy.outer((x - mu[j, 0]), (x - mu[j, 0])) for x in xs]) / flen
@@ -179,6 +188,7 @@ def _get_variables(snp_matrix, X, k=2):
         flen = float(len(xs))
         p[j, 1] = 1.0 - p[j, 0]
         if not xs:
+            valid[j] = 0
             continue
         mu[j, 1] = sum(xs) / flen
         sigma[j, 1] = sum([numpy.outer((x - mu[j, 1]), (x - mu[j, 1])) for x in xs]) / flen
@@ -191,6 +201,8 @@ def _get_variables(snp_matrix, X, k=2):
     # the extended Y = [vec(Q), A, B] formulation
     Y = numpy.ones((l, chunk_size))
     for j in range(l):
+        if not valid[j]:
+            continue
         sigmaj0 = sigma[j, 0]
         sigmaj1 = sigma[j, 1]
         inv_sigma_j0 = linalg.inv(sigmaj0)
@@ -206,4 +218,4 @@ def _get_variables(snp_matrix, X, k=2):
         bj *= -0.5
         Y[j] = numpy.concatenate((qj.flat, aj, [bj]))
 
-    return X, Y, Z, chunk_size
+    return X, Y, Z, valid, chunk_size
