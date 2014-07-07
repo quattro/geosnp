@@ -7,7 +7,6 @@ import numpy.linalg as linalg
 
 from scipy import stats
 from scipy import optimize as opt
-
 import geosnp
 
 
@@ -119,22 +118,30 @@ def est_loc(population, k=2, max_iter=10):
     for iter_num in range(max_iter):
         # maximize likelihood wrt Q, A, B for fixed X
         # we can do each 'j' individually due to linearity in 'i'
+        nll = 0.0
         for j in range(l):
             out = opt.minimize(_nlly, Y[j], method="trust-ncg", jac=_grady, hess=_hessy, args=(j,),
                                options={'gtol': 1e-3})
             #out = opt.minimize(_nlly, Y[j], method="Nelder-Mead", args=(j,), tol=0.001)
             Y[j] = out.x
+            nll += out.fun
+
+        print "Iteration {0} NLL wrt Y: {1}".format(iter_num, nll)
 
         # maximize likelihood wrt X for fixed Q, A, B
         # this is not necessarily concave, so we may need to resort to
         # other methods like grid-search if we can find good regions
         # first test with CG.
+        nll = 0.0
         for i in range(n):
             xi = Z[i][k**2:k**2 + k]
             out = opt.minimize(_nllx, xi, method="trust-ncg", jac=_gradx, hess=_hessx, args=(i,),
                                options={'gtol': 1e-3})
             X[i] = out.x
             Z[i] = numpy.concatenate((numpy.outer(out.x, out.x).flat, out.x, [1.0]))
+            nll += out.fun
+
+        print "Iteration {0} NLL wrt X: {1}".format(iter_num, nll)
 
     return X, Y
 
