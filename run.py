@@ -17,6 +17,8 @@ def main(args):
     population = geosnp.Population.from_bed_files(args.bed_file_prefix, args.bed_map_mode)
 
     # estimate!
+    print 'estimating'
+    import pdb; pdb.set_trace()
     geosnp.est_loc(population.genotype_matrix)
     return 0
 

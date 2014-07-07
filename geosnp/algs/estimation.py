@@ -8,9 +8,7 @@ import numpy.linalg as linalg
 from scipy import stats
 from scipy import optimize as opt
 
-MAJOR = 0
-HETERO = 1
-MINOR = 2
+import geosnp
 
 
 def est_loc(snp_matrix, k=2, max_iter=10):
@@ -142,13 +140,13 @@ def _get_variables(snp_matrix, k=2):
     sigma = numpy.ones((l, 2, k, k))
     p = numpy.ones((l, 2))
     for j in range(l):
-        xs = [X[i] for i in range(n) if snp_matrix[i, j] == MAJOR]
+        xs = [X[i] for i in range(n) if snp_matrix[i, j] == geosnp.HOMO_MAJOR]
         flen = float(len(xs))
         p[j, 0] = flen / n
         mu[j, 0] = sum(xs) / flen
         sigma[j, 0] = sum([numpy.outer((x - mu[j, 0]), (x - mu[j, 0])) for x in xs]) / flen
 
-        xs = [X[i] for i in range(n) if snp_matrix[i, j] == MINOR]
+        xs = [X[i] for i in range(n) if snp_matrix[i, j] == geosnp.HOMO_MINOR]
         flen = float(len(xs))
         p[j, 1] = 1.0 - p[j, 0]
         mu[j, 1] = sum(xs) / flen

@@ -84,7 +84,7 @@ class Population(object):
     def _read_bim_file(self, filename, mtype=BIM):
         with open(filename, "r") as bim_file:
             for row in bim_file:
-                values = row.split("\t")
+                values = row.split()
                 if len(values) != MAP_LEN and len(values) != BIM_LEN:
                     raise ValueError("Invalid map/bim file!")
 
@@ -99,7 +99,7 @@ class Population(object):
     def _read_fam_file(self, filename):
         with open(filename, "r") as fam_file:
             for row in fam_file:
-                values = row.split("\t")
+                values = row.split()
                 if len(values) != FAM_LEN:
                     raise ValueError("Invalid fam file!")
                 ind = Individual(*values)
@@ -109,17 +109,18 @@ class Population(object):
     def _flip_snp(self):
         counts = dict([(HOMO_MAJOR, 0), (HOMO_MINOR, 0), (HETERO, 0), (MISSING, 0)])
         for sidx in range(self.num_snps()):
-            for iidx in len(self):
+            for iidx, indv in enumerate(self.individuals):
                 snp = self.genotype_matrix[iidx, sidx]
                 counts[snp] += 1
 
             # we need to flip
             if counts[HOMO_MINOR] > counts[HOMO_MAJOR]:
-                for iidx, indv in enumerate(self.genotype_matrix):
+                for iidx, indv in enumerate(self.individuals):
                     snp = self.genotype_matrix[iidx, sidx]
-                    if snp == HOMO_MAJOR or snp == HOMO_MINOR:
-                        self.genotype_matrix[iidx, sidx]
-
+                    if snp == HOMO_MAJOR:
+                        self.genotype_matrix[iidx, sidx] = HOMO_MINOR
+                    elif snp == HOMO_MINOR:
+                        self.genotype_matrix[iidx, sidx] = HOMO_MAJOR
                 # swap the SNP info
                 minor = self.snp_info[sidx].major
                 self.snp_info[sidx].major = self.snp_info[sidx].minor
@@ -136,24 +137,27 @@ class Population(object):
         pop = cls()
 
         # read the bim file
+        print 'reading bim'
         pop._read_bim_file(filename_prefix + ".bim", map_type)
 
         # read the fam file
+        print 'reading fam'
         pop._read_fam_file(filename_prefix + ".fam")
 
         n, m = len(pop), pop.num_snps()
         pop.genotype_matrix = np.zeros((n, m), dtype=np.uint8)
 
         # read the bed file
+        print 'reading bed'
         with open(filename_prefix + ".bed", "rb") as bed_file:
             # check the header for magic number
-            header1 = bed_file.read(1)
-            header2 = bed_file.read(1)
+            header1 = ord(bed_file.read(1))
+            header2 = ord(bed_file.read(1))
             if header1 != HEADER1 and header2 != HEADER2:
                 raise ValueError("Illegal bed file!")
 
             # grab the data ordering info
-            mode = bed_file.read(1)
+            mode = ord(bed_file.read(1))
 
             # bed is in snp major mode, ie, 1st snp for all indv, 2nd snp for all indv...
             if mode == SNP_MAJOR:
@@ -166,6 +170,7 @@ class Population(object):
                     pidx = 0
                     for byte in block:
                         # just unroll the loop...
+                        byte = ord(byte)
                         pop.genotype_matrix[pidx, sidx] = read_genotype(byte, 0)
                         pidx += 1
                         pop.genotype_matrix[pidx, sidx] = read_genotype(byte, 1)
@@ -177,7 +182,7 @@ class Population(object):
 
                     # if necessary read in the extra byte for the residual chunk
                     if snp_residual_chunk_size > 0:
-                        byte = bed_file.read(1)
+                        byte = ord(bed_file.read(1))
                         for pos in range(snp_residual_chunk_size):
                             pop.genotype_matrix[pidx, sidx] = read_genotype(byte, pos)
                             pidx += 1
@@ -189,7 +194,8 @@ class Population(object):
                 raise ValueError("Bad bed mode!")
 
         # if the major and minor allels are reversed, flip them
-        pop._flip_snp()
+        print 'flipping'
+        #pop._flip_snp()
         return pop
 
 
