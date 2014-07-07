@@ -11,27 +11,47 @@ from scipy import optimize as opt
 import geosnp
 
 
-def est_loc(snp_matrix, k=2, max_iter=10):
+def est_loc(population, k=2, max_iter=10):
+
+    snp_matrix = population.genotype_matrix
+
     # n people, l snps
     n, l = snp_matrix.shape
 
+    # for constraints
+    flat_eye = numpy.eye(k).flat
+    lagmult = 1.0
+
     X, Y, Z, chunk_size = _get_variables(snp_matrix, k)
 
+    # define a bunch of functions for optimization
     def _fij(i, yj):
         qnf = math.exp(Z[i].T.dot(yj))
         return qnf / (1.0 + qnf)
+
+    def _gij(i, j):
+        if snp_matrix[i, j] == geosnp.HOMO_MINOR:
+            return 2
+        elif snp_matrix[i, j] == geosnp.HOMO_MAJOR:
+            return 0
+        elif snp_matrix[i, j] == geosnp.HETERO:
+            return 1
+        else:
+            raise ValueError("Missing SNP information!")
 
     # negative log-likelihood function (NLL)
     # use this for Y
     def _nlly(yj, j):
         ll = 0.0
+        # add the constraint of Q = qI
+        constraint = lagmult * (yj[:k**2].dot(flat_eye) - k*yj[0])
         for i in range(n):
-            gij = snp_matrix[i, j]
+            gij = _gij(i, j)
             qnf = Z[i].T.dot(yj)
             ll -= gij * math.log(1 + math.exp(-qnf)) + (2 - gij) * math.log(1 + math.exp(qnf))
 
         # return NLL in order to minimize
-        return -ll
+        return -ll - constraint
 
     # negative log-likelihood function (NLL)
     # use this for x
@@ -39,7 +59,7 @@ def est_loc(snp_matrix, k=2, max_iter=10):
         ll = 0.0
         zi = numpy.concatenate((numpy.outer(xi, xi).flat, xi, [1.0]))
         for j in range(l):
-            gij = snp_matrix[i, j]
+            gij = _gij(i, j)
             qnf = zi.T.dot(Y[j])
             ll -= gij * math.log(1 + math.exp(-qnf)) + (2 - gij) * math.log(1 + math.exp(qnf))
 
@@ -52,7 +72,7 @@ def est_loc(snp_matrix, k=2, max_iter=10):
         grad = numpy.zeros(chunk_size)
         for i in range(n):
             fij = _fij(i, yj)
-            gij = snp_matrix[i, j]
+            gij = _gij(i, j)
             grad += ((gij * (1.0 - fij)) + ((gij - 2.0) * fij)) * Z[i]
 
         # flip for NLL
@@ -64,7 +84,7 @@ def est_loc(snp_matrix, k=2, max_iter=10):
         grad = numpy.zeros(k)
         for j in range(l):
             fij = _fij(i, Y[j])
-            gij = snp_matrix[i, j]
+            gij = _gij(i, j)
             qj, aj = Y[j][:k**2].reshape((k, k)), Y[j][k**2:k**2 + 1]
             grad += ((gij * (1.0 - fij)) + ((gij - 2.0) * fij)) * (2.0 * qj.dot(xi) + aj)
 
@@ -88,7 +108,7 @@ def est_loc(snp_matrix, k=2, max_iter=10):
         hess = numpy.zeros((k, k))
         for j in range(l):
             fij = _fij(i, Y[j])
-            gij = snp_matrix[i, j]
+            gij = _gij(i, j)
             qj, aj = Y[j][:k**2].reshape((k, k)), Y[j][k**2:k**2 + 1]
             term = 2 * qj.dot(xi) + aj
             hess -= 2.0 * fij * (1.0 - fij) * numpy.outer(term, term) + (gij - fij)*(2.0 * qj)
@@ -116,10 +136,10 @@ def est_loc(snp_matrix, k=2, max_iter=10):
             X[i] = out.x
             Z[i] = numpy.concatenate((numpy.outer(out.x, out.x).flat, out.x, [1.0]))
 
-    return X
+    return X, Y
 
 
-def _get_variables(snp_matrix, k=2):
+def _get_variables(snp_matrix, X, k=2):
     """ This function takes the snp matrix along with an initial estimate X
     and computes the extended variable formulations Z and Y.
     """
@@ -143,12 +163,16 @@ def _get_variables(snp_matrix, k=2):
         xs = [X[i] for i in range(n) if snp_matrix[i, j] == geosnp.HOMO_MAJOR]
         flen = float(len(xs))
         p[j, 0] = flen / n
+        if not xs:
+            continue
         mu[j, 0] = sum(xs) / flen
         sigma[j, 0] = sum([numpy.outer((x - mu[j, 0]), (x - mu[j, 0])) for x in xs]) / flen
 
         xs = [X[i] for i in range(n) if snp_matrix[i, j] == geosnp.HOMO_MINOR]
         flen = float(len(xs))
         p[j, 1] = 1.0 - p[j, 0]
+        if not xs:
+            continue
         mu[j, 1] = sum(xs) / flen
         sigma[j, 1] = sum([numpy.outer((x - mu[j, 1]), (x - mu[j, 1])) for x in xs]) / flen
 

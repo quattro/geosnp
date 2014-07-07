@@ -41,6 +41,10 @@ class Individual(object):
         self.sex = sex
         self.phenotype = phen
 
+    def __str__(self):
+        return "\t".join([self.family_id, self.individual_id, self.paternal_id,
+                          self.maternal_id, self.sex, self.phenotype])
+
 
 class SNPInfo(object):
 
@@ -51,6 +55,10 @@ class SNPInfo(object):
         self.position = pos
         self.minor = None
         self.major = None
+
+    def __str__(self):
+        return "\t".join([self.chromosome, self.id, self.morgan, self.position,
+                          self.minor, self.major])
 
 
 class Population(object):
@@ -129,6 +137,8 @@ class Population(object):
             # reset counts
             counts[HOMO_MAJOR] = 0
             counts[HOMO_MINOR] = 0
+            counts[HETERO] = 0
+            counts[MISSING] = 0
 
         return
 
