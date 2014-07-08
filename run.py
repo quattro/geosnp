@@ -16,6 +16,10 @@ def main(args):
                         help="Bed map file mode ['{}' or '{}']".format(geosnp.MAP, geosnp.BIM))
     parser.add_argument("-k", "--dim", required=False, type=int, default=2,
                         help="Dimensionality of geographic inference (2 or 3)")
+    parser.add_argument("--loc-input", required=False, type=ap.FileType("r"),
+                        help="Input location file. GeoSNP will only estimate coefficients when this is supplied.")
+    parser.add_argument("--cof-input", required=False, type=ap.FileType("r"),
+                        help="Input coefficient file. GeoSNP will only estimate locations when this is supplied.")
     parser.add_argument("-l", "--loc-output", required=False, default=sys.stdout,
                         help="Output for the locations.")
     parser.add_argument("-c", "--cof-output", required=False, default=sys.stdout,
@@ -34,11 +38,16 @@ def main(args):
         return 1
 
     population = geosnp.Population.from_bed_files(args.bed_file_prefix, args.bed_map_mode)
+    X = Y = None
+    if args.loc_input is not None:
+        X = geosnp.parse_locations(args.loc_input)
+    if args.coff_input is not None:
+        Y = geosnp.parse_coefficients(args.loc_input)
 
     # estimate!
     logging.info("Estimating...")
     try:
-        Z, Y = geosnp.est_loc(population, k=args.dim)
+        Z, Y = geosnp.est_loc(population, X, Y, k=args.dim)
         k = args.dim
         for idx, row in enumerate(Z):
             row = row[k**2:k**2 + k]

@@ -14,9 +14,13 @@ from scipy import optimize as opt
 
 SKIP_MISSING = -1
 
-def est_loc(population, k=2, max_iter=10, epsilon=1e-3):
+def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
 
     snp_matrix = population.genotype_matrix
+
+    est_coef = Y is None
+    est_loc = X is None
+    max_iter = 1 if X is not None or Y is not None else max_iter
 
     # n people, l snps
     n, l = snp_matrix.shape
@@ -28,12 +32,16 @@ def est_loc(population, k=2, max_iter=10, epsilon=1e-3):
 
     Z = numpy.ones((n, chunk_size))
     for i in range(n):
-        X = stats.norm.rvs(size=k)
-        # normalize so ||X|| = 1
-        X *= (1.0 / linalg.norm(X))
-        Z[i] = numpy.concatenate((numpy.outer(X, X).flat, X, [1.0]))
+        if est_loc:
+            Xi = stats.norm.rvs(size=k)
+            # normalize so ||X|| = 1
+            Xi *= (1.0 / linalg.norm(X))
+        else:
+            Xi = X[i]
+        Z[i] = numpy.concatenate((numpy.outer(Xi, Xi).flat, Xi, [1.0]))
 
-    Y = numpy.zeros((l, chunk_size))
+    if est_coef:
+        Y = numpy.zeros((l, chunk_size))
 
     # define a bunch of functions for optimization
     def _fij(i, yj):
@@ -139,31 +147,33 @@ def est_loc(population, k=2, max_iter=10, epsilon=1e-3):
 
     logging.info('Beginning optimization')
     nll = lnll = sys.maxint
-    for iter_num in range(max_iter):
+    for iter_num in range(1, max_iter + 1):
         # maximize likelihood wrt Q, A, B for fixed X
         # we can do each 'j' individually due to linearity in 'i'
         nll = 0.0
-        for j in range(l):
-            out = opt.minimize(_nlly, Y[j], method="trust-ncg", jac=_grady, hess=_hessy, args=(j,),
-                               options={'gtol': 1e-3})
-            Y[j] = out.x
-            nll += out.fun
+        if est_coef:
+            for j in range(l):
+                out = opt.minimize(_nlly, Y[j], method="trust-ncg", jac=_grady, hess=_hessy, args=(j,),
+                                   options={'gtol': 1e-3})
+                Y[j] = out.x
+                nll += out.fun
 
-        logging.info("Iteration {0} NLL wrt Y: {1}".format(iter_num, nll))
+            logging.info("Iteration {0} NLL wrt Y: {1}".format(iter_num, nll))
 
         # maximize likelihood wrt X for fixed Q, A, B
         # this is not necessarily concave, so we may need to resort to
         # other methods like grid-search if we can find good regions
         # first test with CG.
         nll = 0.0
-        for i in range(n):
-            xi = Z[i][k**2:k**2 + k]
-            out = opt.minimize(_nllx, xi, method="trust-ncg", jac=_gradx, hess=_hessx, args=(i,),
-                               options={'gtol': 1e-3})
-            Z[i] = numpy.concatenate((numpy.outer(out.x, out.x).flat, out.x, [1.0]))
-            nll += out.fun
+        if est_loc:
+            for i in range(n):
+                xi = Z[i][k**2:k**2 + k]
+                out = opt.minimize(_nllx, xi, method="trust-ncg", jac=_gradx, hess=_hessx, args=(i,),
+                                   options={'gtol': 1e-3})
+                Z[i] = numpy.concatenate((numpy.outer(out.x, out.x).flat, out.x, [1.0]))
+                nll += out.fun
 
-        logging.info("Iteration {0} NLL wrt X: {1}".format(iter_num, nll))
+            logging.info("Iteration {0} NLL wrt X: {1}".format(iter_num, nll))
 
         if math.fabs(nll - lnll) < epsilon:
             break
