@@ -148,18 +148,19 @@ class Population(object):
         pop = cls()
 
         # read the bim file
-        logging.info('Reading bim file...')
+        logging.info('Reading bim file.')
         pop._read_bim_file(filename_prefix + ".bim", map_type)
 
         # read the fam file
-        logging.info('Reading fam file...')
+        logging.info('Reading fam file.')
         pop._read_fam_file(filename_prefix + ".fam")
 
         n, m = len(pop), pop.num_snps()
         pop.genotype_matrix = np.zeros((n, m), dtype=np.uint8)
 
         # read the bed file
-        logging.info('Reading bed file...')
+        logging.info("{0} people and {1} SNPs.".format(n, m))
+        logging.info('Reading bed file.')
         with open(filename_prefix + ".bed", "rb") as bed_file:
             # check the header for magic number
             header1 = ord(bed_file.read(1))

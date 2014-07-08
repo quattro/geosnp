@@ -27,7 +27,7 @@ def main(args):
 
     # Set up the log.
     logging.basicConfig(level=logging.DEBUG,
-                        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                        format="%(asctime)s - %(levelname)s - %(message)s",
                         handlers=[logging.StreamHandler()])
 
     # grab our arguments and construct the population
@@ -44,8 +44,6 @@ def main(args):
     if args.coff_input is not None:
         Y = geosnp.parse_coefficients(args.loc_input)
 
-    # estimate!
-    logging.info("Estimating...")
     try:
         Z, Y = geosnp.est_loc(population, X, Y, k=args.dim)
         k = args.dim
