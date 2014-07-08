@@ -36,7 +36,7 @@ def est_loc(population, k=2, max_iter=10):
         elif snp_matrix[i, j] == geosnp.HETERO:
             return 1
         else:
-            raise ValueError("Missing SNP information!")
+            return -1
 
     # negative log-likelihood function (NLL)
     # use this for Y
@@ -46,6 +46,8 @@ def est_loc(population, k=2, max_iter=10):
         constraint = lagmult * (yj[:k**2].dot(flat_eye) - k*yj[0])
         for i in range(n):
             gij = _gij(i, j)
+            if gij == -1:
+                continue
             qnf = Z[i].T.dot(yj)
             ll -= gij * math.log(1 + math.exp(-qnf)) + (2 - gij) * math.log(1 + math.exp(qnf))
 
@@ -61,6 +63,8 @@ def est_loc(population, k=2, max_iter=10):
             if not valid[j]:
                 continue
             gij = _gij(i, j)
+            if gij == -1:
+                continue
             qnf = zi.T.dot(Y[j])
             ll -= gij * math.log(1 + math.exp(-qnf)) + (2 - gij) * math.log(1 + math.exp(qnf))
 
@@ -74,6 +78,8 @@ def est_loc(population, k=2, max_iter=10):
         for i in range(n):
             fij = _fij(i, yj)
             gij = _gij(i, j)
+            if gij == -1:
+                continue
             grad += ((gij * (1.0 - fij)) + ((gij - 2.0) * fij)) * Z[i]
 
         # flip for NLL
@@ -88,6 +94,8 @@ def est_loc(population, k=2, max_iter=10):
                 continue
             fij = _fij(i, Y[j])
             gij = _gij(i, j)
+            if gij == -1:
+                continue
             qj, aj = Y[j][:k**2].reshape((k, k)), Y[j][k**2:k**2 + 1]
             grad += ((gij * (1.0 - fij)) + ((gij - 2.0) * fij)) * (2.0 * qj.dot(xi) + aj)
 
@@ -114,6 +122,8 @@ def est_loc(population, k=2, max_iter=10):
                 continue
             fij = _fij(i, Y[j])
             gij = _gij(i, j)
+            if gij == -1:
+                continue
             qj, aj = Y[j][:k**2].reshape((k, k)), Y[j][k**2:k**2 + 1]
             term = 2 * qj.dot(xi) + aj
             hess -= 2.0 * fij * (1.0 - fij) * numpy.outer(term, term) + (gij - fij)*(2.0 * qj)
@@ -233,7 +243,7 @@ def _pinv_pdet(a, rcond=1e-15):
             s[i] = 1./s[i]
         else:
             s[i] = 0.;
-    pinv = linalg.dot(numpy.transpose(vt), numpy.multiply(s[:, numpy.newaxis], numpy.transpose(u)))
-    pdet = numpy.product([d for d in numpy.diag(s) if d != 0.0])
+    pinv = numpy.dot(numpy.transpose(vt), numpy.multiply(s[:, numpy.newaxis], numpy.transpose(u)))
+    pdet = numpy.prod([d for d in s if d != 0.0])
 
     return pinv, pdet
