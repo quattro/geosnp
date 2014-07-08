@@ -37,7 +37,6 @@ def main(args):
 
     # estimate!
     logging.info("Estimating...")
-    import pdb; pdb.set_trace()
     try:
         X, Y = geosnp.est_loc(population, k=args.dim)
         for idx, row in enumerate(X):
