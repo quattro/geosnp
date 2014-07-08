@@ -1,4 +1,5 @@
 __author__ = "Nicholas Mancuso (nick.mancuso@gmail.com)"
+import logging
 import numpy as np
 
 # Some useful constants
@@ -147,18 +148,18 @@ class Population(object):
         pop = cls()
 
         # read the bim file
-        print 'reading bim'
+        logging.info('Reading bim file...')
         pop._read_bim_file(filename_prefix + ".bim", map_type)
 
         # read the fam file
-        print 'reading fam'
+        logging.info('Reading fam file...')
         pop._read_fam_file(filename_prefix + ".fam")
 
         n, m = len(pop), pop.num_snps()
         pop.genotype_matrix = np.zeros((n, m), dtype=np.uint8)
 
         # read the bed file
-        print 'reading bed'
+        logging.info('Reading bed file...')
         with open(filename_prefix + ".bed", "rb") as bed_file:
             # check the header for magic number
             header1 = ord(bed_file.read(1))
@@ -204,7 +205,7 @@ class Population(object):
                 raise ValueError("Bad bed mode!")
 
         # if the major and minor allels are reversed, flip them
-        print 'flipping'
+        logging.info('Flipping SNPs encodings if necessary')
         #pop._flip_snp()
         return pop
 

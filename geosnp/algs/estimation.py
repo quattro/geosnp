@@ -3,26 +3,37 @@ __all__ = ["est_loc"]
 
 import logging
 import math
+import sys
+
 import numpy
 import numpy.linalg as linalg
+import geosnp
 
 from scipy import stats
 from scipy import optimize as opt
-import geosnp
 
+SKIP_MISSING = -1
 
-def est_loc(population, k=2, max_iter=10):
+def est_loc(population, k=2, max_iter=10, epsilon=1e-3):
 
     snp_matrix = population.genotype_matrix
 
     # n people, l snps
     n, l = snp_matrix.shape
+    chunk_size = k**2 + k + 1
 
     # for constraints
     flat_eye = numpy.eye(k).flat
     lagmult = 1.0
 
-    X, Y, Z, valid, chunk_size = _get_variables(snp_matrix, k)
+    Z = numpy.ones((n, chunk_size))
+    for i in range(n):
+        X = stats.norm.rvs(size=k)
+        # normalize so ||X|| = 1
+        X *= (1.0 / linalg.norm(X))
+        Z[i] = numpy.concatenate((numpy.outer(X, X).flat, X, [1.0]))
+
+    Y = numpy.zeros((l, chunk_size))
 
     # define a bunch of functions for optimization
     def _fij(i, yj):
@@ -37,7 +48,7 @@ def est_loc(population, k=2, max_iter=10):
         elif snp_matrix[i, j] == geosnp.HETERO:
             return 1
         else:
-            return -1
+            return SKIP_MISSING
 
     # negative log-likelihood function (NLL)
     # use this for Y
@@ -47,7 +58,7 @@ def est_loc(population, k=2, max_iter=10):
         constraint = lagmult * (yj[:k**2].dot(flat_eye) - k*yj[0])
         for i in range(n):
             gij = _gij(i, j)
-            if gij == -1:
+            if gij == SKIP_MISSING:
                 continue
             qnf = Z[i].T.dot(yj)
             ll -= gij * math.log(1 + math.exp(-qnf)) + (2 - gij) * math.log(1 + math.exp(qnf))
@@ -61,10 +72,8 @@ def est_loc(population, k=2, max_iter=10):
         ll = 0.0
         zi = numpy.concatenate((numpy.outer(xi, xi).flat, xi, [1.0]))
         for j in range(l):
-            if not valid[j]:
-                continue
             gij = _gij(i, j)
-            if gij == -1:
+            if gij == SKIP_MISSING:
                 continue
             qnf = zi.T.dot(Y[j])
             ll -= gij * math.log(1 + math.exp(-qnf)) + (2 - gij) * math.log(1 + math.exp(qnf))
@@ -79,7 +88,7 @@ def est_loc(population, k=2, max_iter=10):
         for i in range(n):
             fij = _fij(i, yj)
             gij = _gij(i, j)
-            if gij == -1:
+            if gij == SKIP_MISSING:
                 continue
             grad += ((gij * (1.0 - fij)) + ((gij - 2.0) * fij)) * Z[i]
 
@@ -91,13 +100,11 @@ def est_loc(population, k=2, max_iter=10):
     def _gradx(xi, i):
         grad = numpy.zeros(k)
         for j in range(l):
-            if not valid[j]:
-                continue
             fij = _fij(i, Y[j])
             gij = _gij(i, j)
-            if gij == -1:
+            if gij == SKIP_MISSING:
                 continue
-            qj, aj = Y[j][:k**2].reshape((k, k)), Y[j][k**2:k**2 + 1]
+            qj, aj = Y[j][:k**2].reshape((k, k)), Y[j][k**2:k**2 + k]
             grad += ((gij * (1.0 - fij)) + ((gij - 2.0) * fij)) * (2.0 * qj.dot(xi) + aj)
 
         # flip for NLL
@@ -119,27 +126,24 @@ def est_loc(population, k=2, max_iter=10):
     def _hessx(xi, i):
         hess = numpy.zeros((k, k))
         for j in range(l):
-            if not valid[j]:
-                continue
             fij = _fij(i, Y[j])
             gij = _gij(i, j)
-            if gij == -1:
+            if gij == SKIP_MISSING:
                 continue
-            qj, aj = Y[j][:k**2].reshape((k, k)), Y[j][k**2:k**2 + 1]
+            qj, aj = Y[j][:k**2].reshape((k, k)), Y[j][k**2:k**2 + k]
             term = 2 * qj.dot(xi) + aj
             hess -= 2.0 * fij * (1.0 - fij) * numpy.outer(term, term) + (gij - fij)*(2.0 * qj)
 
         # flip for NLL
         return -hess
 
-    logging.info('beginning optimization')
+    logging.info('Beginning optimization')
+    nll = lnll = sys.maxint
     for iter_num in range(max_iter):
         # maximize likelihood wrt Q, A, B for fixed X
         # we can do each 'j' individually due to linearity in 'i'
         nll = 0.0
         for j in range(l):
-            if not valid[j]:
-                continue
             out = opt.minimize(_nlly, Y[j], method="trust-ncg", jac=_grady, hess=_hessy, args=(j,),
                                options={'gtol': 1e-3})
             Y[j] = out.x
@@ -156,11 +160,15 @@ def est_loc(population, k=2, max_iter=10):
             xi = Z[i][k**2:k**2 + k]
             out = opt.minimize(_nllx, xi, method="trust-ncg", jac=_gradx, hess=_hessx, args=(i,),
                                options={'gtol': 1e-3})
-            X[i] = out.x
             Z[i] = numpy.concatenate((numpy.outer(out.x, out.x).flat, out.x, [1.0]))
             nll += out.fun
 
         logging.info("Iteration {0} NLL wrt X: {1}".format(iter_num, nll))
+
+        if math.fabs(nll - lnll) < epsilon:
+            break
+        lnll = nll
+
 
     return X, Y
 
