@@ -121,6 +121,7 @@ def est_loc(population, k=2, max_iter=10):
         # flip for NLL
         return -hess
 
+    print 'beginning optimization'
     for iter_num in range(max_iter):
         # maximize likelihood wrt Q, A, B for fixed X
         # we can do each 'j' individually due to linearity in 'i'
@@ -205,17 +206,34 @@ def _get_variables(snp_matrix, X, k=2):
             continue
         sigmaj0 = sigma[j, 0]
         sigmaj1 = sigma[j, 1]
-        inv_sigma_j0 = linalg.inv(sigmaj0)
-        inv_sigma_j1 = linalg.inv(sigmaj1)
+        inv_sigma_j0, det_sigma_j0 = _pinv_pdet(sigmaj0)
+        inv_sigma_j1, det_sigma_j1 = _pinv_pdet(sigmaj0)
+        inv_sigma_j1 = linalg.pinv(sigmaj1)
         muj0 = mu[j, 0]
         muj1 = mu[j, 1]
 
         qj = -0.5 * (inv_sigma_j0 - inv_sigma_j1)
         aj = inv_sigma_j1.dot(muj1) - inv_sigma_j0.dot(muj0)
         bj = muj0.T.dot(inv_sigma_j0).dot(muj0) - muj1.T.dot(inv_sigma_j1).dot(muj1)
-        bj -= math.log(linalg.det(sigmaj1) / linalg.det(sigmaj0))
+        bj -= math.log(det_sigma_j1 / det_sigma_j0)
         bj -= 2.0 * math.log(p[j, 0] / p[j, 1])
         bj *= -0.5
         Y[j] = numpy.concatenate((qj.flat, aj, [bj]))
 
     return X, Y, Z, valid, chunk_size
+
+def _pinv_pdet(a, rcond=1e-15):
+    a = a.conjugate()
+    u, s, vt = linalg.svd(a, 0)
+    m = u.shape[0]
+    n = vt.shape[1]
+    cutoff = rcond * numpy.maximum.reduce(s)
+    for i in range(min(n, m)):
+        if s[i] > cutoff:
+            s[i] = 1./s[i]
+        else:
+            s[i] = 0.;
+    pinv = linalg.dot(numpy.transpose(vt), numpy.multiply(s[:, numpy.newaxis], numpy.transpose(u)))
+    pdet = numpy.product([d for d in numpy.diag(s) if d != 0.0])
+
+    return pinv, pdet
