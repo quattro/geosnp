@@ -170,7 +170,7 @@ def est_loc(population, k=2, max_iter=10, epsilon=1e-3):
         lnll = nll
 
 
-    return X, Y
+    return Z, Y
 
 
 def _get_variables(snp_matrix, X, k=2):

@@ -38,8 +38,10 @@ def main(args):
     # estimate!
     logging.info("Estimating...")
     try:
-        X, Y = geosnp.est_loc(population, k=args.dim)
-        for idx, row in enumerate(X):
+        Z, Y = geosnp.est_loc(population, k=args.dim)
+        k = args.dim
+        for idx, row in enumerate(Z):
+            row = row[k**2:k**2 + k]
             person = population[idx]
             args.loc_output.write(str(person))
             line = "\t".join(row) + linesep
