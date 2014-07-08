@@ -40,9 +40,11 @@ def main(args):
     population = geosnp.Population.from_bed_files(args.bed_file_prefix, args.bed_map_mode)
     X = Y = None
     if args.loc_input is not None:
-        X = geosnp.parse_locations(args.loc_input)
+        logging.info("Reading location file.")
+        X = geosnp.parse_locations(args.loc_input, len(population))
     if args.coff_input is not None:
-        Y = geosnp.parse_coefficients(args.loc_input)
+        logging.info("Reading coefficient file.")
+        Y = geosnp.parse_coefficients(args.loc_input, population.num_snps())
 
     try:
         Z, Y = geosnp.est_loc(population, X, Y, k=args.dim)
