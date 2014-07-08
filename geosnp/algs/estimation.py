@@ -1,6 +1,7 @@
 __author__ = "Nicholas Mancuso (nick.mancuso@gmail.com)"
 __all__ = ["est_loc"]
 
+import logging
 import math
 import numpy
 import numpy.linalg as linalg
@@ -131,7 +132,7 @@ def est_loc(population, k=2, max_iter=10):
         # flip for NLL
         return -hess
 
-    print 'beginning optimization'
+    logging.info('beginning optimization')
     for iter_num in range(max_iter):
         # maximize likelihood wrt Q, A, B for fixed X
         # we can do each 'j' individually due to linearity in 'i'
@@ -144,7 +145,7 @@ def est_loc(population, k=2, max_iter=10):
             Y[j] = out.x
             nll += out.fun
 
-        print "Iteration {0} NLL wrt Y: {1}".format(iter_num, nll)
+        logging.info("Iteration {0} NLL wrt Y: {1}".format(iter_num, nll))
 
         # maximize likelihood wrt X for fixed Q, A, B
         # this is not necessarily concave, so we may need to resort to
@@ -159,7 +160,7 @@ def est_loc(population, k=2, max_iter=10):
             Z[i] = numpy.concatenate((numpy.outer(out.x, out.x).flat, out.x, [1.0]))
             nll += out.fun
 
-        print "Iteration {0} NLL wrt X: {1}".format(iter_num, nll)
+        logging.info("Iteration {0} NLL wrt X: {1}".format(iter_num, nll))
 
     return X, Y
 

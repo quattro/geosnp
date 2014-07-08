@@ -1,5 +1,6 @@
 #! /usr/bin/env python2.7
 __author__ = "Nicholas Mancuso (nick.mancuso@gmail.com)"
+import logging
 import sys
 import geosnp
 
@@ -20,6 +21,11 @@ def main(args):
     parser.add_argument("-c", "--cof-output", required=False, default=sys.stdout,
                         help="Output for the model coefficients.")
 
+    # Set up the log.
+    logging.basicConfig(level=logging.DEBUG,
+                        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                        handlers=[logging.StreamHandler()])
+
     # grab our arguments and construct the population
     args = parser.parse_args(args)
 
@@ -30,7 +36,7 @@ def main(args):
     population = geosnp.Population.from_bed_files(args.bed_file_prefix, args.bed_map_mode)
 
     # estimate!
-    print 'estimating'
+    logging.info("Estimating...")
     import pdb; pdb.set_trace()
     try:
         X, Y = geosnp.est_loc(population, k=args.dim)
@@ -48,6 +54,7 @@ def main(args):
 
     except Exception as e:
         import traceback as tb
+        logging.error(str(e))
         tb.print_exc()
         return 1
 
