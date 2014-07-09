@@ -39,11 +39,12 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
 
     # define a bunch of functions for optimization
     def _gij(i, j):
-        if snp_matrix[i, j] == geosnp.HOMO_MINOR:
+        snp = snp_matrix[i, j]
+        if snp == geosnp.HOMO_MINOR:
             return 2
-        elif snp_matrix[i, j] == geosnp.HOMO_MAJOR:
+        elif snp == geosnp.HOMO_MAJOR:
             return 0
-        elif snp_matrix[i, j] == geosnp.HETERO:
+        elif snp == geosnp.HETERO:
             return 1
         else:
             return SKIP_MISSING
@@ -171,8 +172,10 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
         nll = 0.0
         if est_coef:
             for j in range(l):
-                out = opt.minimize(_nlly, Y[j], method="trust-ncg", jac=_grady, hess=_hessy,
-                                   args=(j, y_grad, y_hess), options={'gtol': 1e-3})
+                #out = opt.minimize(_nlly, Y[j], method="trust-ncg", jac=_grady, hess=_hessy,
+                #                   args=(j, y_grad, y_hess), options={'gtol': 1e-3})
+                out = opt.minimize(_nlly, Y[j], method="newton-cg", jac=_grady, hess=_hessy,
+                                   args=(j, y_grad, y_hess))
                 Y[j] = out.x
                 nll += out.fun
 
@@ -185,8 +188,10 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
         nll = 0.0
         if est_loc:
             for i in range(n):
-                out = opt.minimize(_nllx, X[i], method="trust-ncg", jac=_gradx, hess=_hessx,
-                                   args=(i, x_grad, x_hess), options={'gtol': 1e-3})
+                #out = opt.minimize(_nllx, X[i], method="trust-ncg", jac=_gradx, hess=_hessx,
+                #                   args=(i, x_grad, x_hess), options={'gtol': 1e-3})
+                out = opt.minimize(_nllx, X[i], method="newton-cg", jac=_gradx, hess=_hessx,
+                                   args=(i, x_grad, x_hess))
                 X[i] = out.x
                 nll += out.fun
 
