@@ -20,10 +20,10 @@ def main(args):
                         help="Input location file. GeoSNP will only estimate coefficients when this is supplied.")
     parser.add_argument("--cof-input", required=False, type=ap.FileType("r"),
                         help="Input coefficient file. GeoSNP will only estimate locations when this is supplied.")
-    parser.add_argument("-l", "--loc-output", required=False, default=sys.stdout,
-                        help="Output for the locations.")
-    parser.add_argument("-c", "--cof-output", required=False, default=sys.stdout,
-                        help="Output for the model coefficients.")
+    parser.add_argument("-l", "--loc-output", required=False, type=ap.FileType("w"),
+                        default=sys.stdout, help="Output for the locations.")
+    parser.add_argument("-c", "--cof-output", required=False, type=ap.FileType("w"),
+                        default=sys.stdout, help="Output for the model coefficients.")
 
     # Set up the log.
     logging.basicConfig(level=logging.DEBUG,
@@ -42,7 +42,7 @@ def main(args):
     if args.loc_input is not None:
         logging.info("Reading location file.")
         X = geosnp.parse_locations(args.loc_input, len(population))
-    if args.coff_input is not None:
+    if args.cof_input is not None:
         logging.info("Reading coefficient file.")
         Y = geosnp.parse_coefficients(args.loc_input, population.num_snps())
 
@@ -52,14 +52,14 @@ def main(args):
         for idx, row in enumerate(Z):
             row = row[k**2:k**2 + k]
             person = population[idx]
-            args.loc_output.write(str(person))
-            line = "\t".join(row) + linesep
+            args.loc_output.write(str(person) + "\t")
+            line = "\t".join(map(str, row)) + linesep
             args.loc_output.write(line)
 
         for idx, row in enumerate(Y):
             snp = population.snp_info[idx]
-            args.cof_output.write(str(snp) + linesep)
-            line = "\t".join(row) + linesep
+            args.cof_output.write(str(snp) + "\t")
+            line = "\t".join(map(str, row)) + linesep
             args.cof_output.write(line)
 
     except Exception as e:

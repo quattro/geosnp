@@ -35,7 +35,7 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
         if est_loc:
             Xi = stats.norm.rvs(size=k)
             # normalize so ||X|| = 1
-            Xi *= (1.0 / linalg.norm(X))
+            Xi *= (1.0 / linalg.norm(Xi))
         else:
             Xi = X[i]
         Z[i] = numpy.concatenate((numpy.outer(Xi, Xi).flat, Xi, [1.0]))

@@ -58,7 +58,7 @@ class SNPInfo(object):
         self.major = None
 
     def __str__(self):
-        return "\t".join([self.chromosome, self.id, self.morgan, self.position,
+        return "\t".join([self.chromosome, self.id, self.morgan, str(self.position),
                           self.minor, self.major])
 
 
