@@ -206,8 +206,8 @@ class Population(object):
                 raise ValueError("Bad bed mode!")
 
         # if the major and minor allels are reversed, flip them
-        logging.info('Flipping SNPs encodings if necessary')
-        #pop._flip_snp()
+        logging.info('Checking SNPs encodings.')
+        pop._flip_snp()
         return pop
 
 

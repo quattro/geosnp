@@ -47,10 +47,8 @@ def main(args):
         Y = geosnp.parse_coefficients(args.loc_input, population.num_snps())
 
     try:
-        Z, Y = geosnp.est_loc(population, X, Y, k=args.dim)
-        k = args.dim
-        for idx, row in enumerate(Z):
-            row = row[k**2:k**2 + k]
+        X, Y = geosnp.est_loc(population, X, Y, k=args.dim)
+        for idx, row in enumerate(X):
             person = population[idx]
             args.loc_output.write(str(person) + "\t")
             line = "\t".join(map(str, row)) + linesep

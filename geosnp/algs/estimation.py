@@ -24,30 +24,20 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
 
     # n people, l snps
     n, l = snp_matrix.shape
-    chunk_size = k**2 + k + 1
+    chunk_size = k + 2
+    zi = numpy.ones(chunk_size)
 
     # for constraints
-    flat_eye = numpy.eye(k).flat
-    lagmult = 1.0
-
-    Z = numpy.ones((n, chunk_size))
-    for i in range(n):
-        if est_loc:
-            Xi = stats.norm.rvs(size=k)
+    if est_loc:
+        X = stats.norm.rvs(size=[n, k])
+        for i in range(n):
             # normalize so ||X|| = 1
-            Xi *= (1.0 / linalg.norm(Xi))
-        else:
-            Xi = X[i]
-        Z[i] = numpy.concatenate((numpy.outer(Xi, Xi).flat, Xi, [1.0]))
+            X[i] *= (1.0 / linalg.norm(X[i]))
 
     if est_coef:
         Y = numpy.zeros((l, chunk_size))
 
     # define a bunch of functions for optimization
-    def _fij(i, yj):
-        qnf = math.exp(Z[i].T.dot(yj))
-        return qnf / (1.0 + qnf)
-
     def _gij(i, j):
         if snp_matrix[i, j] == geosnp.HOMO_MINOR:
             return 2
@@ -60,25 +50,26 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
 
     # negative log-likelihood function (NLL)
     # use this for Y
-    def _nlly(yj, j):
+    def _nlly(yj, j, grad, hess):
         ll = 0.0
-        # add the constraint of Q = qI
-        constraint = lagmult * (yj[:k**2].dot(flat_eye) - k*yj[0])
+        q, a, b = yj[0], yj[1:k + 1], yj[-1]
         for i in range(n):
             gij = _gij(i, j)
             if gij == SKIP_MISSING:
                 continue
-            qnf = Z[i].T.dot(yj)
+            xi = X[i]
+            qnf = (q * sum(xi**2.0)) + a.dot(xi) + b
             ll -= gij * math.log(1 + math.exp(-qnf)) + (2 - gij) * math.log(1 + math.exp(qnf))
 
         # return NLL in order to minimize
-        return -ll - constraint
+        return -ll
 
     # negative log-likelihood function (NLL)
     # use this for x
-    def _nllx(xi, i):
+    def _nllx(xi, i, grad, hess):
         ll = 0.0
-        zi = numpy.concatenate((numpy.outer(xi, xi).flat, xi, [1.0]))
+        zi[0] = sum(xi**2.0)
+        zi[1:k + 1] = xi
         for j in range(l):
             gij = _gij(i, j)
             if gij == SKIP_MISSING:
@@ -91,61 +82,88 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
 
     # gradient of the NLL
     # use this for Y
-    def _grady(yj, j):
-        grad = numpy.zeros(chunk_size)
+    y_grad = numpy.zeros(chunk_size)
+    def _grady(yj, j, grad, hess):
+        grad.fill(0.0)
+        q, a, b = yj[0], yj[1:k + 1], yj[-1]
         for i in range(n):
-            fij = _fij(i, yj)
             gij = _gij(i, j)
             if gij == SKIP_MISSING:
                 continue
-            grad += ((gij * (1.0 - fij)) + ((gij - 2.0) * fij)) * Z[i]
+
+            xi = X[i]
+            xi2 = sum(xi**2.0)
+            qnf = (q * xi2) + a.dot(xi) + b
+            fij = qnf / (1.0 + math.exp(qnf))
+            zi[0] = xi2
+            zi[1:k + 1] = xi
+            grad += ((gij * (1.0 - fij)) + ((gij - 2.0) * fij)) * zi
 
         # flip for NLL
         return -grad
 
     # gradient of the NLL
     # use this for X
-    def _gradx(xi, i):
-        grad = numpy.zeros(k)
+    x_grad = numpy.zeros(k)
+    def _gradx(xi, i, grad, hess):
+        grad.fill(0.0)
         for j in range(l):
-            fij = _fij(i, Y[j])
             gij = _gij(i, j)
             if gij == SKIP_MISSING:
                 continue
-            qj, aj = Y[j][:k**2].reshape((k, k)), Y[j][k**2:k**2 + k]
-            grad += ((gij * (1.0 - fij)) + ((gij - 2.0) * fij)) * (2.0 * qj.dot(xi) + aj)
+
+            yj = Y[j]
+            qj, aj, bj = yj[0], yj[1:k + 1], yj[-1]
+            qnf = (qj * sum(xi**2.0)) + aj.dot(xi) + bj
+            fij = qnf / (1.0 + math.exp(qnf))
+            grad += ((gij * (1.0 - fij)) + ((gij - 2.0) * fij)) * (2.0 * sum(qj * xi) + aj)
 
         # flip for NLL
         return -grad
 
     # hessian of the NLL
     # use this for Y
-    def _hessy(yj, j):
-        hess = numpy.zeros((chunk_size, chunk_size))
+    y_hess = numpy.zeros((chunk_size, chunk_size))
+    def _hessy(yj, j, grad, hess):
+        hess.fill(0.0)
         for i in range(n):
-            fij = _fij(i, yj)
-            hess -= 2.0 * fij * (1.0 - fij) * numpy.outer(Z[i], Z[i])
+            gij = _gij(i, j)
+            if gij == SKIP_MISSING:
+                continue
+
+            xi = X[i]
+            q, a, b = yj[0], yj[1:k + 1], yj[-1]
+            xi2 = sum(xi**2.0)
+            qnf = (q * xi2) + a.dot(xi) + b
+            fij = qnf / (1.0 + math.exp(qnf))
+            zi[0] = xi2
+            zi[1:k + 1] = xi
+            hess -= 2.0 * fij * (1.0 - fij) * numpy.outer(zi, zi)
 
         # flip for NLL
         return -hess
 
     # hessian of the NLL
     # use this for X
-    def _hessx(xi, i):
-        hess = numpy.zeros((k, k))
+    x_hess = numpy.zeros((k, k))
+    def _hessx(xi, i, grad, hess):
+        hess.fill(0.0)
         for j in range(l):
-            fij = _fij(i, Y[j])
             gij = _gij(i, j)
             if gij == SKIP_MISSING:
                 continue
-            qj, aj = Y[j][:k**2].reshape((k, k)), Y[j][k**2:k**2 + k]
-            term = 2 * qj.dot(xi) + aj
+
+            yj = Y[j]
+            qj, aj, bj = yj[0], yj[1:k + 1], yj[-1]
+            qnf = (qj * sum(xi**2.0)) + aj.dot(xi) + bj
+            fij = qnf / (1.0 + math.exp(qnf))
+            term = 2 * sum(qj * xi) + aj
             hess -= 2.0 * fij * (1.0 - fij) * numpy.outer(term, term) + (gij - fij)*(2.0 * qj)
 
         # flip for NLL
         return -hess
 
-    logging.info('Beginning optimization')
+    logging.info('Beginning optimization.')
     nll = lnll = sys.maxint
     for iter_num in range(1, max_iter + 1):
         # maximize likelihood wrt Q, A, B for fixed X
@@ -153,8 +171,8 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
         nll = 0.0
         if est_coef:
             for j in range(l):
-                out = opt.minimize(_nlly, Y[j], method="trust-ncg", jac=_grady, hess=_hessy, args=(j,),
-                                   options={'gtol': 1e-3})
+                out = opt.minimize(_nlly, Y[j], method="trust-ncg", jac=_grady, hess=_hessy,
+                                   args=(j, y_grad, y_hess), options={'gtol': 1e-3})
                 Y[j] = out.x
                 nll += out.fun
 
@@ -167,10 +185,9 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
         nll = 0.0
         if est_loc:
             for i in range(n):
-                xi = Z[i][k**2:k**2 + k]
-                out = opt.minimize(_nllx, xi, method="trust-ncg", jac=_gradx, hess=_hessx, args=(i,),
-                                   options={'gtol': 1e-3})
-                Z[i] = numpy.concatenate((numpy.outer(out.x, out.x).flat, out.x, [1.0]))
+                out = opt.minimize(_nllx, X[i], method="trust-ncg", jac=_gradx, hess=_hessx,
+                                   args=(i, x_grad, x_hess), options={'gtol': 1e-3})
+                X[i] = out.x
                 nll += out.fun
 
             logging.info("Iteration {0} NLL wrt X: {1}".format(iter_num, nll))
@@ -180,89 +197,4 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
         lnll = nll
 
 
-    return Z, Y
-
-
-def _get_variables(snp_matrix, X, k=2):
-    """ This function takes the snp matrix along with an initial estimate X
-    and computes the extended variable formulations Z and Y.
-    """
-    # n people, l snps
-    n, l = snp_matrix.shape
-
-    # random initialization of the location matrix
-    X = stats.norm.rvs(size=[n, k])
-
-    # normalize so ||X[i]|| = 1, for each i
-    for i in range(n):
-        X[i] *= (1.0 / linalg.norm(X[i]))
-
-    chunk_size = k**2 + k + 1
-
-    # Get the MLE parameters for each Gaussian
-    valid = numpy.ones(l)
-    mu = numpy.ones((l, 2, k))
-    sigma = numpy.ones((l, 2, k, k))
-    p = numpy.ones((l, 2))
-    for j in range(l):
-        xs = [X[i] for i in range(n) if snp_matrix[i, j] == geosnp.HOMO_MAJOR]
-        flen = float(len(xs))
-        p[j, 0] = flen / n
-        if not xs:
-            valid[j] = 0
-            continue
-        mu[j, 0] = sum(xs) / flen
-        sigma[j, 0] = sum([numpy.outer((x - mu[j, 0]), (x - mu[j, 0])) for x in xs]) / flen
-
-        xs = [X[i] for i in range(n) if snp_matrix[i, j] == geosnp.HOMO_MINOR]
-        flen = float(len(xs))
-        p[j, 1] = 1.0 - p[j, 0]
-        if not xs:
-            valid[j] = 0
-            continue
-        mu[j, 1] = sum(xs) / flen
-        sigma[j, 1] = sum([numpy.outer((x - mu[j, 1]), (x - mu[j, 1])) for x in xs]) / flen
-
-    # the extended Z = [vec(XX^T), X, 1] formulation
-    Z = numpy.ones((n, chunk_size))
-    for i in range(n):
-        Z[i] = numpy.concatenate((numpy.outer(X[i], X[i]).flat, X[i], [1.0]))
-
-    # the extended Y = [vec(Q), A, B] formulation
-    Y = numpy.ones((l, chunk_size))
-    for j in range(l):
-        if not valid[j]:
-            continue
-        sigmaj0 = sigma[j, 0]
-        sigmaj1 = sigma[j, 1]
-        inv_sigma_j0, det_sigma_j0 = _pinv_pdet(sigmaj0)
-        inv_sigma_j1, det_sigma_j1 = _pinv_pdet(sigmaj0)
-        inv_sigma_j1 = linalg.pinv(sigmaj1)
-        muj0 = mu[j, 0]
-        muj1 = mu[j, 1]
-
-        qj = -0.5 * (inv_sigma_j0 - inv_sigma_j1)
-        aj = inv_sigma_j1.dot(muj1) - inv_sigma_j0.dot(muj0)
-        bj = muj0.T.dot(inv_sigma_j0).dot(muj0) - muj1.T.dot(inv_sigma_j1).dot(muj1)
-        bj -= math.log(det_sigma_j1 / det_sigma_j0)
-        bj -= 2.0 * math.log(p[j, 0] / p[j, 1])
-        bj *= -0.5
-        Y[j] = numpy.concatenate((qj.flat, aj, [bj]))
-
-    return X, Y, Z, valid, chunk_size
-
-def _pinv_pdet(a, rcond=1e-15):
-    a = a.conjugate()
-    u, s, vt = linalg.svd(a, 0)
-    m = u.shape[0]
-    n = vt.shape[1]
-    cutoff = rcond * numpy.maximum.reduce(s)
-    for i in range(min(n, m)):
-        if s[i] > cutoff:
-            s[i] = 1./s[i]
-        else:
-            s[i] = 0.;
-    pinv = numpy.dot(numpy.transpose(vt), numpy.multiply(s[:, numpy.newaxis], numpy.transpose(u)))
-    pdet = numpy.prod([d for d in s if d != 0.0])
-
-    return pinv, pdet
+    return X, Y
