@@ -23,13 +23,18 @@ HEADER2 = 0x1B
 IND_MAJOR = 0
 SNP_MAJOR = 1
 
-# SNP value constants
-HOMO_MAJOR = 0x00
-HOMO_MINOR = 0x03
+# Plink SNP value constants
+PLINK_MAJOR = 0x00
+PLINK_MINOR = 0x03
 # these next two are technically flipped, but only because the bytes
 # are encoded in reverse order
-HETERO = 0x02
-MISSING = 0x01
+PLINK_HETERO = 0x02
+PLINK_MISSING = 0x01
+
+MISSING = -1
+HOMO_MAJOR = 0
+HOMO_MINOR = 2
+HETERO = 1
 
 
 class Individual(object):
@@ -156,7 +161,7 @@ class Population(object):
         pop._read_fam_file(filename_prefix + ".fam")
 
         n, m = len(pop), pop.num_snps()
-        pop.genotype_matrix = np.zeros((n, m), dtype=np.uint8)
+        pop.genotype_matrix = np.zeros((n, m), dtype=np.int8)
 
         # read the bed file
         logging.info("{0} people and {1} SNPs.".format(n, m))
@@ -206,7 +211,7 @@ class Population(object):
                 raise ValueError("Bad bed mode!")
 
         # if the major and minor allels are reversed, flip them
-        logging.info('Checking SNPs encodings.')
+        logging.info('Checking SNP encodings.')
         pop._flip_snp()
         return pop
 
@@ -215,4 +220,6 @@ def read_genotype(item, pos):
     mask = [0x03, 0x0C, 0x30, 0xC0]
     # mask off the region we want, and shift
     value = (item & mask[pos]) >> (pos * 2)
-    return value
+    translation = dict([(PLINK_MAJOR, HOMO_MAJOR), (PLINK_MINOR, HOMO_MINOR),
+                        (PLINK_HETERO, HETERO), (PLINK_MISSING, MISSING)])
+    return translation[value]

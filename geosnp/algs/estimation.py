@@ -12,7 +12,7 @@ import geosnp
 from scipy import stats
 from scipy import optimize as opt
 
-SKIP_MISSING = -1
+MAX_FIJ = -math.log(numpy.finfo(float).eps)
 
 def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
 
@@ -30,66 +30,52 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
     # for constraints
     if est_loc:
         X = stats.norm.rvs(size=[n, k])
-        for i in range(n):
-            # normalize so ||X|| = 1
-            X[i] *= (1.0 / linalg.norm(X[i]))
 
     if est_coef:
-        Y = numpy.zeros((l, chunk_size))
-
-    # define a bunch of functions for optimization
-    def _gij(i, j):
-        snp = snp_matrix[i, j]
-        if snp == geosnp.HOMO_MINOR:
-            return 2
-        elif snp == geosnp.HOMO_MAJOR:
-            return 0
-        elif snp == geosnp.HETERO:
-            return 1
-        else:
-            return SKIP_MISSING
+        Y = numpy.ones((l, chunk_size))
 
     # negative log-likelihood function (NLL)
     # use this for Y
-    def _nlly(yj, j, grad, hess):
+    def _nlly(yj, j):
         ll = 0.0
         q, a, b = yj[0], yj[1:k + 1], yj[-1]
         for i in range(n):
-            gij = _gij(i, j)
-            if gij == SKIP_MISSING:
+            gij = snp_matrix[i, j]
+            if gij == geosnp.MISSING:
                 continue
             xi = X[i]
             qnf = (q * sum(xi**2.0)) + a.dot(xi) + b
-            ll -= gij * math.log(1 + math.exp(-qnf)) + (2 - gij) * math.log(1 + math.exp(qnf))
+            if qnf > MAX_FIJ:
+                qnf = MAX_FIJ
+            ll -= gij * math.log(1.0 + math.exp(-qnf)) + (2.0 - gij) * math.log(1.0 + math.exp(qnf))
 
         # return NLL in order to minimize
         return -ll
 
     # negative log-likelihood function (NLL)
     # use this for x
-    def _nllx(xi, i, grad, hess):
+    def _nllx(xi, i):
         ll = 0.0
         zi[0] = sum(xi**2.0)
         zi[1:k + 1] = xi
         for j in range(l):
-            gij = _gij(i, j)
-            if gij == SKIP_MISSING:
+            gij = snp_matrix[i, j]
+            if gij == geosnp.MISSING:
                 continue
             qnf = zi.T.dot(Y[j])
-            ll -= gij * math.log(1 + math.exp(-qnf)) + (2 - gij) * math.log(1 + math.exp(qnf))
+            ll -= gij * math.log(1.0 + math.exp(-qnf)) + (2.0 - gij) * math.log(1.0 + math.exp(qnf))
 
             # return NLL in order to minimize
         return -ll
 
     # gradient of the NLL
     # use this for Y
-    y_grad = numpy.zeros(chunk_size)
-    def _grady(yj, j, grad, hess):
-        grad.fill(0.0)
+    def _grady(yj, j):
+        grad = numpy.zeros(chunk_size)
         q, a, b = yj[0], yj[1:k + 1], yj[-1]
         for i in range(n):
-            gij = _gij(i, j)
-            if gij == SKIP_MISSING:
+            gij = snp_matrix[i, j]
+            if gij == geosnp.MISSING:
                 continue
 
             xi = X[i]
@@ -98,38 +84,36 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
             fij = qnf / (1.0 + math.exp(qnf))
             zi[0] = xi2
             zi[1:k + 1] = xi
-            grad += ((gij * (1.0 - fij)) + ((gij - 2.0) * fij)) * zi
+            grad += ((gij * (1.0 - fij)) - ((2.0 - gij) * fij)) * zi
 
         # flip for NLL
         return -grad
 
     # gradient of the NLL
     # use this for X
-    x_grad = numpy.zeros(k)
-    def _gradx(xi, i, grad, hess):
-        grad.fill(0.0)
+    def _gradx(xi, i):
+        grad = numpy.zeros(k)
         for j in range(l):
-            gij = _gij(i, j)
-            if gij == SKIP_MISSING:
+            gij = snp_matrix[i, j]
+            if gij == geosnp.MISSING:
                 continue
 
             yj = Y[j]
             qj, aj, bj = yj[0], yj[1:k + 1], yj[-1]
             qnf = (qj * sum(xi**2.0)) + aj.dot(xi) + bj
             fij = qnf / (1.0 + math.exp(qnf))
-            grad += ((gij * (1.0 - fij)) + ((gij - 2.0) * fij)) * (2.0 * sum(qj * xi) + aj)
+            grad += ((gij * (1.0 - fij)) + ((2.0 - gij) * fij)) * (2.0 * sum(qj * xi) + aj)
 
         # flip for NLL
         return -grad
 
     # hessian of the NLL
     # use this for Y
-    y_hess = numpy.zeros((chunk_size, chunk_size))
-    def _hessy(yj, j, grad, hess):
-        hess.fill(0.0)
+    def _hessy(yj, j):
+        hess = numpy.zeros((chunk_size, chunk_size))
         for i in range(n):
-            gij = _gij(i, j)
-            if gij == SKIP_MISSING:
+            gij = snp_matrix[i, j]
+            if gij == geosnp.MISSING:
                 continue
 
             xi = X[i]
@@ -139,30 +123,49 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
             fij = qnf / (1.0 + math.exp(qnf))
             zi[0] = xi2
             zi[1:k + 1] = xi
-            hess -= 2.0 * fij * (1.0 - fij) * numpy.outer(zi, zi)
+            hess -= fij * (1.0 - fij) * numpy.outer(zi, zi)
 
         # flip for NLL
-        return -hess
+        hess = -2.0 * hess
+        if linalg.det(hess) < 1e-20:
+            hess += numpy.eye(chunk_size)
+
+        return hess
 
     # hessian of the NLL
     # use this for X
-    x_hess = numpy.zeros((k, k))
-    def _hessx(xi, i, grad, hess):
-        hess.fill(0.0)
+    def _hessx(xi, i):
+        hess = numpy.zeros((k, k))
         for j in range(l):
-            gij = _gij(i, j)
-            if gij == SKIP_MISSING:
+            gij = snp_matrix[i, j]
+            if gij == geosnp.MISSING:
                 continue
 
             yj = Y[j]
             qj, aj, bj = yj[0], yj[1:k + 1], yj[-1]
             qnf = (qj * sum(xi**2.0)) + aj.dot(xi) + bj
             fij = qnf / (1.0 + math.exp(qnf))
-            term = 2 * sum(qj * xi) + aj
-            hess -= 2.0 * fij * (1.0 - fij) * numpy.outer(term, term) + (gij - fij)*(2.0 * qj)
+            term = 2.0 * sum(qj * xi) + aj
+            hess -= fij * (1.0 - fij) * numpy.outer(term, term) + (gij - 2.0 * fij) * (2.0 * qj)
 
         # flip for NLL
-        return -hess
+        hess = -2.0 * hess
+
+        # as NLL wrt X is not necessarily convex, we may need to alter the
+        # hessian so that newton method still converges to local optimum
+        # algorithm 6.3 from Numerical Opt Nocedal,Wright 1999
+        beta = linalg.norm(hess, 'fro')
+        tau = 0 if min(numpy.diag(hess)) > 0 else beta
+        eye = numpy.eye(k)
+        while True:
+            hess = hess + (tau * eye)
+            # test for Positive Definiteness
+            if min(linalg.eigvals(hess)) > 0:
+                break
+            else:
+                tau = max(2 * tau, beta / 2)
+
+        return hess
 
     logging.info('Beginning optimization.')
     nll = lnll = sys.maxint
@@ -172,10 +175,8 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
         nll = 0.0
         if est_coef:
             for j in range(l):
-                #out = opt.minimize(_nlly, Y[j], method="trust-ncg", jac=_grady, hess=_hessy,
-                #                   args=(j, y_grad, y_hess), options={'gtol': 1e-3})
                 out = opt.minimize(_nlly, Y[j], method="newton-cg", jac=_grady, hess=_hessy,
-                                   args=(j, y_grad, y_hess))
+                                   args=(j,))
                 Y[j] = out.x
                 nll += out.fun
 
@@ -188,10 +189,8 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
         nll = 0.0
         if est_loc:
             for i in range(n):
-                #out = opt.minimize(_nllx, X[i], method="trust-ncg", jac=_gradx, hess=_hessx,
-                #                   args=(i, x_grad, x_hess), options={'gtol': 1e-3})
                 out = opt.minimize(_nllx, X[i], method="newton-cg", jac=_gradx, hess=_hessx,
-                                   args=(i, x_grad, x_hess))
+                                   args=(i,))
                 X[i] = out.x
                 nll += out.fun
 
@@ -200,6 +199,5 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
         if math.fabs(nll - lnll) < epsilon:
             break
         lnll = nll
-
 
     return X, Y

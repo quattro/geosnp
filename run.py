@@ -48,6 +48,7 @@ def main(args):
 
     try:
         X, Y = geosnp.est_loc(population, X, Y, k=args.dim)
+        logging.info("Finished estimation. Outputting results.")
         for idx, row in enumerate(X):
             person = population[idx]
             args.loc_output.write(str(person) + "\t")
