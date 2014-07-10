@@ -12,8 +12,6 @@ import geosnp
 from scipy import stats
 from scipy import optimize as opt
 
-MAX_FIJ = -math.log(numpy.finfo(float).eps)
-
 def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
 
     snp_matrix = population.genotype_matrix
@@ -45,9 +43,8 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
                 continue
             xi = X[i]
             qnf = (q * sum(xi**2.0)) + a.dot(xi) + b
-            if qnf > MAX_FIJ:
-                qnf = MAX_FIJ
-            ll -= gij * math.log(1.0 + math.exp(-qnf)) + (2.0 - gij) * math.log(1.0 + math.exp(qnf))
+            r = log1pexp(-qnf)
+            ll -= (gij * r) + ((2.0 - gij) * (1.0 - r))
 
         # return NLL in order to minimize
         return -ll
@@ -63,7 +60,8 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
             if gij == geosnp.MISSING:
                 continue
             qnf = zi.T.dot(Y[j])
-            ll -= gij * math.log(1.0 + math.exp(-qnf)) + (2.0 - gij) * math.log(1.0 + math.exp(qnf))
+            r = log1pexp(-qnf)
+            ll -= (gij * r) + ((2.0 - gij) * (1.0 - r))
 
             # return NLL in order to minimize
         return -ll
@@ -171,7 +169,6 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
     nll = lnll = sys.maxint
     for iter_num in range(1, max_iter + 1):
         # maximize likelihood wrt Q, A, B for fixed X
-        # we can do each 'j' individually due to linearity in 'i'
         nll = 0.0
         if est_coef:
             for j in range(l):
@@ -201,3 +198,14 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
         lnll = nll
 
     return X, Y
+
+# numerically safe log(1 + exp(x))
+def log1pexp(x):
+    if x <= -37:
+        return math.exp(x)
+    elif x <= 18:
+        return numpy.log1p(math.exp(x))
+    elif x <= 33.3:
+        return x + math.exp(-x)
+    else:
+        return x
