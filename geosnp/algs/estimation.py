@@ -43,8 +43,9 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
                 continue
             xi = X[i]
             qnf = (q * sum(xi**2.0)) + a.dot(xi) + b
-            r = log1pexp(-qnf)
-            ll -= (gij * r) + ((2.0 - gij) * (1.0 - r))
+            r = numpy.logaddexp2(-qnf, 0)
+            r2 = numpy.logaddexp2(qnf, 0)
+            ll -= (gij * r) + ((2.0 - gij) * (r2))
 
         # return NLL in order to minimize
         return -ll
@@ -60,10 +61,11 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
             if gij == geosnp.MISSING:
                 continue
             qnf = zi.T.dot(Y[j])
-            r = log1pexp(-qnf)
-            ll -= (gij * r) + ((2.0 - gij) * (1.0 - r))
+            r = numpy.logaddexp2(-qnf, 0)
+            r2 = numpy.logaddexp2(qnf, 0)
+            ll -= (gij * r) + ((2.0 - gij) * (r2))
 
-            # return NLL in order to minimize
+        # return NLL in order to minimize
         return -ll
 
     # gradient of the NLL
@@ -198,14 +200,3 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
         lnll = nll
 
     return X, Y
-
-# numerically safe log(1 + exp(x))
-def log1pexp(x):
-    if x <= -37:
-        return math.exp(x)
-    elif x <= 18:
-        return numpy.log1p(math.exp(x))
-    elif x <= 33.3:
-        return x + math.exp(-x)
-    else:
-        return x
