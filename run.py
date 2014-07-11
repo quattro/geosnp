@@ -47,6 +47,7 @@ def main(args):
         Y = geosnp.parse_coefficients(args.loc_input, population.num_snps())
 
     try:
+        import pdb; pdb.set_trace()
         X, Y = geosnp.est_loc(population, X, Y, k=args.dim)
         logging.info("Finished estimation. Outputting results.")
         for idx, row in enumerate(X):

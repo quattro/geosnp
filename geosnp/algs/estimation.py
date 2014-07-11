@@ -81,10 +81,12 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
             xi = X[i]
             xi2 = sum(xi**2.0)
             qnf = (q * xi2) + a.dot(xi) + b
-            fij = qnf / (1.0 + math.exp(qnf))
+            fij = 1.0 / (1.0 + math.exp(qnf))
+            nfij = 1.0 - fij
+
             zi[0] = xi2
             zi[1:k + 1] = xi
-            grad += ((gij * (1.0 - fij)) - ((2.0 - gij) * fij)) * zi
+            grad += ((gij * nfij) - ((2.0 - gij) * fij)) * zi
 
         # flip for NLL
         return -grad
@@ -101,7 +103,7 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
             yj = Y[j]
             qj, aj, bj = yj[0], yj[1:k + 1], yj[-1]
             qnf = (qj * sum(xi**2.0)) + aj.dot(xi) + bj
-            fij = qnf / (1.0 + math.exp(qnf))
+            fij = 1.0 / (1.0 + math.exp(qnf))
             grad += ((gij * (1.0 - fij)) + ((2.0 - gij) * fij)) * (2.0 * sum(qj * xi) + aj)
 
         # flip for NLL
@@ -120,7 +122,7 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
             q, a, b = yj[0], yj[1:k + 1], yj[-1]
             xi2 = sum(xi**2.0)
             qnf = (q * xi2) + a.dot(xi) + b
-            fij = qnf / (1.0 + math.exp(qnf))
+            fij = 1.0 / (1.0 + math.exp(qnf))
             zi[0] = xi2
             zi[1:k + 1] = xi
             hess -= fij * (1.0 - fij) * numpy.outer(zi, zi)
@@ -144,7 +146,7 @@ def est_loc(population, X=None, Y=None, k=2, max_iter=10, epsilon=1e-3):
             yj = Y[j]
             qj, aj, bj = yj[0], yj[1:k + 1], yj[-1]
             qnf = (qj * sum(xi**2.0)) + aj.dot(xi) + bj
-            fij = qnf / (1.0 + math.exp(qnf))
+            fij = 1.0 / (1.0 + math.exp(qnf))
             term = 2.0 * sum(qj * xi) + aj
             hess -= fij * (1.0 - fij) * numpy.outer(term, term) + (gij - 2.0 * fij) * (2.0 * qj)
 
